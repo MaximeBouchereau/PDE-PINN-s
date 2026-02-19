@@ -44,26 +44,17 @@ class NN(nn.Module):
          """
 
         t , x = t.float().T , x.float().T
-        x_dom = torch.linspace(-L, L, 100).unsqueeze(0)
 
         psi = torch.cat((t,x) , dim=1)
-        t_norm_psi, x_norm_psi = torch.meshgrid(t.squeeze(), x_dom.squeeze())
-        norm_psi = torch.cat((t_norm_psi.reshape(torch.numel(t_norm_psi), 1), x_norm_psi.reshape(torch.numel(x_norm_psi), 1)), dim=1)
 
         # Structure of the solution of the equation
 
         for i, module in enumerate(self.U):
             psi = module(psi)
-            norm_psi = module(norm_psi)
-
-        norm_psi = norm_psi.T
-        norm_psi_real = norm_psi[0, :].reshape(torch.numel(t), torch.numel(x_dom))
-        norm_psi_imag = norm_psi[1, :].reshape(torch.numel(t), torch.numel(x_dom))
-        norm_psi = 2 * L * torch.mean(norm_psi_real ** 2 + norm_psi_imag ** 2, dim=1).unsqueeze(0)
         psi = psi.T
 
 
-        return psi / norm_psi
+        return psi
 
 class ML(NN):
     """Training of the neural network for solving 1D heat equation"""
@@ -73,7 +64,8 @@ class ML(NN):
         Inputs:
         - x: Tensor of shape (1,n): Space variable"""
         # return 0.5*torch.exp(-10*((x+L/2)/L)**2)
-        return (1/torch.pi) ** 0.25 * torch.exp(-0.5 * x ** 2)
+        # return (1/torch.pi) ** 0.25 * torch.exp(-0.5 * x ** 2)
+        return (1/torch.pi) ** 0.25 * torch.exp(-0.5 * x ** 2) * (1 + torch.sqrt(torch.tensor(2)) * x) / torch.sqrt(torch.tensor(2))
 
     def Loss(self, t, x, model):
         """Computes the Loss function associated with the PINN
@@ -134,6 +126,9 @@ class ML(NN):
 
         ones = torch.ones_like(x)
 
+        x_dom = torch.linspace(-L, L, 100).unsqueeze(0)
+        ones_dom = torch.ones_like(x_dom)
+
         u_hat = torch.zeros_like(x)
         u_hat.requires_grad = True
 
@@ -149,7 +144,7 @@ class ML(NN):
         u1_hat_t = torch.autograd.grad(u1_hat, t, grad_outputs=torch.ones_like(u1_hat), create_graph=True)[0]
         u2_hat_t = torch.autograd.grad(u2_hat, t, grad_outputs=torch.ones_like(u2_hat), create_graph=True)[0]
 
-        loss_PDE = (((u1_hat_t + 0.5 * u2_hat_xx - 0.5 * x ** 2 * u2_hat)).abs() ** 2).mean() + (((- u2_hat_t + 0.5 * u1_hat_xx - 0.5 * x ** 2 * u1_hat)).abs() ** 2).mean() # Loss associated to the PDE
+        loss_PDE = ((u1_hat_t + 0.5 * u2_hat_xx - 0.5 * x ** 2 * u2_hat) ** 2 + (- u2_hat_t + 0.5 * u1_hat_xx - 0.5 * x ** 2 * u1_hat) ** 2).mean() # Loss associated to the PDE
 
         u_hat_L, u_hat_R = model(t, -L*ones), model(t, L*ones)
         loss_BC = ((u_hat_L).abs() ** 2).mean() + ((u_hat_R).abs() ** 2).mean() # Loss associated to boundary conditions (Dirichlet)
@@ -157,13 +152,18 @@ class ML(NN):
         u1_hat_0 = model(0*ones , x)[0,:]
         u2_hat_0 = model(0*ones , x)[1,:]
         u_0 = self.u0(x)
+
         loss_IC = (((u1_hat_0 - u_0)).abs() ** 2).mean() +  ((u2_hat_0).abs() ** 2).mean() # Loss associated to initial condition
 
-        # loss_NO = ((model(ones, x) ** 2).mean() - (u_0 ** 2).mean()) ** 2 # Constant norm
-        # print("Loss_PDE:", format(loss_PDE, '.4E'), " - Loss_BC:", format(loss_BC, '.4E'), " - Loss_IC:", format(loss_IC, '.4E'))
-        # print("Loss_PDE:", format(loss_PDE, '.4E'), " - Loss_BC:", format(loss_BC, '.4E'), " - Loss_IC:", format(loss_IC, '.4E'), " - Loss_NO:", format(loss_NO, '.4E'))
+        # loss_L2 = sum([(2 * L * (model(t_n * ones_dom, x_dom) ** 2).mean() - 1) ** 2 for t_n in torch.linspace(0, t.max(), 10)]) # Constant norm
+        loss_L2 = 0
 
-        return loss_PDE + loss_BC + loss_IC
+        # print(2 * L * (model(ones_dom, x_dom) ** 2).mean())
+
+        # print("Loss_PDE:", format(loss_PDE, '.4E'), " - Loss_BC:", format(loss_BC, '.4E'), " - Loss_IC:", format(loss_IC, '.4E'))
+        # print("Loss_PDE:", format(loss_PDE, '.4E'), " - Loss_BC:", format(loss_BC, '.4E'), " - Loss_IC:", format(loss_IC, '.4E'), " - Loss_L2:", format(loss_L2, '.4E'))
+
+        return loss_PDE + loss_BC + loss_IC + loss_L2, loss_PDE, loss_BC, loss_IC, loss_L2
 
     def Loss_autograd_WT(self, t, x, model):
         """Computes the Loss function associated with the PINN
@@ -300,12 +300,12 @@ class ML(NN):
                 model.train()
                 t_batch = t_train[:, ixs]
                 x_batch = x_train[:, ixs]
-                loss_train = self.Loss_autograd(t_batch, x_batch, model)
+                loss_train = self.Loss_autograd(t_batch, x_batch, model)[0]
                 loss_train.backward()
                 optimizer.step()  # Optimizer passes to the next epoch for gradient descent
 
-            loss_train = self.Loss_autograd(t_train, t_test, model)
-            loss_test = self.Loss_autograd(t_test, x_test, model)
+            loss_train, loss_train_PDE, loss_train_BC, loss_train_IC, loss_train_L2 = self.Loss_autograd(t_train, x_train, model)
+            loss_test, loss_test_PDE, loss_test_BC, loss_test_IC, loss_test_L2 = self.Loss_autograd(t_test, x_test, model)
 
             if loss_train < best_loss_train:
                 best_loss_train = loss_train
@@ -320,6 +320,8 @@ class ML(NN):
                 end_time_train = start_time_train + ((N_epochs + 1) / (epoch + 1)) * (time.time() - start_time_train)
                 end_time_train = datetime.datetime.fromtimestamp(int(end_time_train)).strftime(' %Y-%m-%d %H:%M:%S')
                 print('    Epoch', epoch, ': Loss_train =', format(loss_train, '.4E'), ': Loss_test =', format(loss_test, '.4E'), " -  Estimated end:", end_time_train)
+                print('       > Train: PDE:', format(loss_train_PDE, '.2E'), ' - BC:', format(loss_train_BC, '.2E'), ' - IC:', format(loss_train_IC, '.2E'), ' - L2:', format(loss_train_L2, '.2E'))
+                print('       > Test: PDE:', format(loss_test_PDE, '.2E'), ' - BC:', format(loss_test_BC, '.2E'), ' - IC:', format(loss_test_IC, '.2E'), ' - L2:', format(loss_test_L2, '.2E'))
 
         print("Loss_train (final)=", format(best_loss_train, '.4E'))
         print("Loss_test (final)=", format(best_loss_test, '.4E'))
@@ -346,8 +348,18 @@ class ML(NN):
         # Resolution with Crank-Nicholson scheme
         print("Resolution with Crank-Nicholson scheme...")
         N , J = t_grid.shape[0] , x_grid.shape[0]
-        A = -(1j)*(0.5*ht/hx**2)*(2*torch.diag(torch.ones(J-2),0) - torch.diag(torch.ones(J-3),-1) - torch.diag(torch.ones(J-3),1)) + 0.5*(1j)*ht*torch.diag(x_grid[1:-1]**2)
+        A = (1j)*(0.5*ht/hx**2)*(2*torch.diag(torch.ones(J-2),0) - torch.diag(torch.ones(J-3),-1) - torch.diag(torch.ones(J-3),1)) + 0.5*(1j)*ht*torch.diag(x_grid[1:-1]**2)
         z_CN = torch.zeros_like(grid_t, dtype=torch.cfloat)
+
+        # Hh = (1 / (2 * hx ** 2)) * (2 * torch.diag(torch.ones(J - 2), 0) - torch.diag(torch.ones(J - 3), -1) - torch.diag(torch.ones(J - 3), 1)) + 0.5 * torch.diag(x_grid[1:-1] ** 2)
+        # A = (1j) * 1 * Hh
+        # print(torch.norm(A - (1j) * ht * Hh))
+        # psi0 = self.u0(x_grid)[1:J - 1]
+
+        # residual = torch.norm(Hh @ psi0 - 0.5 * psi0)
+        # print(residual)
+        # eigvals, eigvecs = torch.linalg.eigh(Hh)
+
         z_CN[0,:] = self.u0(x_grid)
         for n in range(N-1):
             count = int(100 * ((n+2) / N))
@@ -355,12 +367,16 @@ class ML(NN):
             sys.stdout.flush()
             z_CN[n+1,1:J-1] = torch.inverse(torch.eye(J-2)+0.5*A)@(torch.eye(J-2)-0.5*A)@z_CN[n,1:J-1]
 
-        z_CN = (z_CN.real)**2 + (z_CN.imag)**2
+        z_CN_ = (z_CN.real)**2 + (z_CN.imag)**2
+        z_CN_Re = z_CN.real
+        z_CN_Im = z_CN.imag
 
         # Resolution with the PINN
         print(" ")
         print("Resolution with PINN...")
         z_PINN = torch.zeros_like(grid_t)
+        z_PINN_Re = torch.zeros_like(grid_t)
+        z_PINN_Im = torch.zeros_like(grid_t)
         ones = torch.ones_like(x_grid).unsqueeze(0)
         for it in range(grid_t.shape[0]):
             count = int(100 * ((it+1) / torch.numel(t_grid)))
@@ -368,33 +384,39 @@ class ML(NN):
             sys.stdout.flush()
             psi = model(t_grid[it] * ones, x_grid.unsqueeze(0))
             z_PINN[it, :] = psi[0, :] ** 2 + psi[1, :] ** 2
+            z_PINN_Re[it, :] = psi[0, :]
+            z_PINN_Im[it, :] = psi[1, :]
+            # z_PINN[it, :] = psi[0, :]
             # for ix in range(grid_x.shape[1]):
             #     z_PINN[it, ix] = model(torch.tensor([[grid_t[it, ix]]]), torch.tensor([[grid_x[it, ix]]]))[0]**2 + model(torch.tensor([[grid_t[it, ix]]]), torch.tensor([[grid_x[it, ix]]]))[1]**2
 
         z_PINN = z_PINN.detach().numpy()
+        z_PINN_Re = z_PINN_Re.detach().numpy()
+        z_PINN_Im = z_PINN_Im.detach().numpy()
+
 
         # Distance between both solutions
-        z_DIFF = np.abs(z_CN-z_PINN)
+        z_DIFF = np.abs(z_CN_-z_PINN)
 
-        plt.figure(figsize=(10,10))
+        plt.figure(figsize=(25,12))
 
-        plt.subplot(2, 2, 1)
+        plt.subplot(2, 4, 1)
         plt.imshow(z_PINN.T,cmap="jet" , aspect="auto" , extent=(0,T,-L,L))
         plt.colorbar()
         ax = plt.gca()
         ax.set_xlabel("$t$")
         ax.set_ylabel("$x$")
-        plt.title("PINN")
+        plt.title("$|\psi|^2$ (PINN)")
 
-        plt.subplot(2, 2, 2)
-        plt.imshow(z_CN.T, cmap="jet", aspect="auto", extent=(0, T, -L, L))
+        plt.subplot(2, 4, 2)
+        plt.imshow(z_CN_.T, cmap="jet", aspect="auto", extent=(0, T, -L, L))
         plt.colorbar()
         ax = plt.gca()
         ax.set_xlabel("$t$")
         ax.set_ylabel("$x$")
-        plt.title("Crank-Nicholson")
+        plt.title("$|\psi|^2$ (Crank-Nicholson)")
 
-        plt.subplot(2, 2, 3)
+        plt.subplot(2, 4, 3)
         plt.imshow(z_DIFF.T, cmap="spring", aspect="auto", extent=(0, T, -L, L))
         plt.colorbar()
         ax = plt.gca()
@@ -402,18 +424,50 @@ class ML(NN):
         ax.set_ylabel("$x$")
         plt.title("Difference")
 
-        plt.subplot(2, 2, 4)
+        plt.subplot(2, 4, 4)
         plt.plot(list(range(len(Loss_train))), Loss_train, label="$Loss_{train}$", color="green")
         plt.plot(list(range(len(Loss_test))), Loss_test, label="$Loss_{test}$", color="red")
         plt.yscale("log")
         plt.xlabel("epochs")
-        plt.ylabel("Loss")
+        # plt.ylabel("Loss")
         plt.legend()
         plt.title("Loss evolution")
         plt.grid()
 
+        plt.subplot(2, 4, 5)
+        plt.imshow(z_PINN_Re.T, cmap="jet", aspect="auto", extent=(0, T, -L, L))
+        plt.colorbar()
+        ax = plt.gca()
+        ax.set_xlabel("$t$")
+        ax.set_ylabel("$x$")
+        plt.title("$Re(\psi)$ (PINN)")
+
+        plt.subplot(2, 4, 6)
+        plt.imshow(z_CN_Re.T, cmap="jet", aspect="auto", extent=(0, T, -L, L))
+        plt.colorbar()
+        ax = plt.gca()
+        ax.set_xlabel("$t$")
+        ax.set_ylabel("$x$")
+        plt.title("$Re(\psi)$ (Crank-Nicholson)")
+
+        plt.subplot(2, 4, 7)
+        plt.imshow(z_PINN_Im.T, cmap="jet", aspect="auto", extent=(0, T, -L, L))
+        plt.colorbar()
+        ax = plt.gca()
+        ax.set_xlabel("$t$")
+        ax.set_ylabel("$x$")
+        plt.title("$Im(\psi)$ (PINN)")
+
+        plt.subplot(2, 4, 8)
+        plt.imshow(z_CN_Im.T, cmap="jet", aspect="auto", extent=(0, T, -L, L))
+        plt.colorbar()
+        ax = plt.gca()
+        ax.set_xlabel("$t$")
+        ax.set_ylabel("$x$")
+        plt.title("$Im(\psi)$ (Crank-Nicholson)")
+
         if save_fig == False:
             plt.show()
         else:
-            plt.savefig("PINN_Schrodinger_Equation_1D.pdf" , dpi = (200))
+            plt.savefig("PINN_Schrodinger_Equation_1D.pdf" , dpi = (500))
         pass
