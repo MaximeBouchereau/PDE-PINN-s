@@ -6,4 +6,4 @@ PDE's:
 - Heat equation 2D
 - Poisson equation 2D
 - Schrödinger equation 1D
-- Schrödinger equarion 2D
+- Schrödinger equation 2D
