@@ -24,9 +24,12 @@ import time
 import datetime
 from datetime import datetime as dtime
 
-# Python code to solve 1D Schrödinger equation with PINN's for Dirichlet boundary conditions
+# Python code to solve ODE controlability problem with PINN's
 
-L = np.pi    # Size of the (space) domain of resolution
+params_linear_pendulum = {'name': 'linear_pendulum', 'dim_control': 1}
+params_pendulum = {'name': 'pendulum', 'dim_control': 2}
+
+params = params_pendulum
 
 class NN(nn.Module):
     """Class of Neural Networks used in this scipt"""
@@ -35,7 +38,7 @@ class NN(nn.Module):
         zeta , HL = 256 , 4
         super().__init__()
         self.Y = nn.ModuleList([nn.Linear(1, zeta), nn.Tanh()] + (HL - 1) * [nn.Linear(zeta, zeta), nn.Tanh()] + [nn.Linear(zeta, 2, bias=True)])
-        self.U = nn.ModuleList([nn.Linear(1, zeta), nn.Tanh()] + (HL - 1) * [nn.Linear(zeta, zeta), nn.Tanh()] + [nn.Linear(zeta, 1, bias=True)])
+        self.U = nn.ModuleList([nn.Linear(1, zeta), nn.Tanh()] + (HL - 1) * [nn.Linear(zeta, zeta), nn.Tanh()] + [nn.Linear(zeta, params['dim_control'], bias=True)])
 
     def y0(self):
         """Initial condition."""
@@ -43,7 +46,23 @@ class NN(nn.Module):
 
     def y1(self):
         """Final condition."""
-        return torch.tensor([[0, 2]])
+        return torch.tensor([[0, 20]])
+
+    def f(self, X, U):
+        """Vector field associated to the ODE.
+
+        Inputs:
+        - X: Tensor of shape (d,n), where d is the dimension of the state space and n is the batch size (number of data).
+        - U: Tensor of shape (m,n), where m is the dimension of the control space and n is the batch size (number of data)."""
+
+        Y = torch.zeros_like(X)
+        if params['name'] == "linear_pendulum":
+            Y[0, :] = -X[1, :] + U[0, :]
+            Y[1, :] = X[0, :]
+        elif params['name'] == "pendulum":
+            Y[0, :] = -torch.sin(X[1, :]) + U[0, :]
+            Y[1, :] = X[0, :] + U[1, :]
+        return Y
 
     def forward(self, t):
         """Structured Neural Network.
@@ -100,7 +119,11 @@ class ML(NN):
         y1_hat_t = torch.autograd.grad(y1_hat, t, grad_outputs=torch.ones_like(y1_hat), create_graph=True)[0]
         y2_hat_t = torch.autograd.grad(y2_hat, t, grad_outputs=torch.ones_like(y2_hat), create_graph=True)[0]
 
-        loss_ODE = ((y1_hat_t + y2_hat - u_hat[0, :]) ** 2 + (y2_hat_t - y1_hat) ** 2).mean() # Loss associated to the PDE
+        f_hat = self.f(y_hat, u_hat)
+        # loss = ((f_hat[0, :] + y2_hat - u_hat[0, :]) ** 2 + (f_hat[1, :] - y1_hat) ** 2).mean()
+        # print(loss)
+        # loss_ODE = ((y1_hat_t + y2_hat - u_hat[0, :]) ** 2 + (y2_hat_t - y1_hat) ** 2).mean()  # Loss associated to the ODE
+        loss_ODE = ((y1_hat_t - f_hat[0, :]) ** 2 + (y2_hat_t - f_hat[1, :]) ** 2).mean() # Loss associated to the ODE
 
         y_hat_1 = model(torch.tensor([[T]]))[0]
 
@@ -191,15 +214,49 @@ class ML(NN):
         print(" ")
         print("Resolution with PINN...")
         y_PINN, u_PINN = model(t)
+
+
+        # Resolution with Midpoint method
+        print(" ")
+        print("Resolution with Midpoint method...")
+        y_NUM = torch.zeros_like(y_PINN)
+        y_NUM[:, 0] = self.y0()
+        for n in range(torch.numel(t) - 1):
+            print("   > Loading: " + str(format(100 * (n+1) / (torch.numel(t)-1), '.1f') ) + " % ", end="\r")
+            ### Forward Euler [old version]
+            # y_NUM[:, n+1] = y_NUM[:, n] + ht * torch.tensor([[0, -1.0], [1, 0]])@y_NUM[:, n] + ht * torch.tensor([1, 0])*u_PINN[0, n]
+
+            ### Forward Euler ###
+            # y_NUM[:, n+1] = y_NUM[:, n] + ht * self.f(y_NUM[:, n].unsqueeze(1), u_PINN[:, n].unsqueeze(1)).squeeze()
+
+            ### Midpoint ###
+
+            def f_iter(y):
+                """Iteration function.
+                Inputs:
+                - y: Tensor of shape (d,) where d is the dimension of the state space."""
+
+                z = y_NUM[:, n] + ht * self.f((y + y_NUM[:, n]).unsqueeze(1) / 2, (u_PINN[:, n] + u_PINN[:, n+1]).unsqueeze(1) / 2).squeeze()
+                return z
+
+            yy = y_NUM[:, n]
+            for n_i in range(5):
+                yy = f_iter(yy)
+            y_NUM[:, n+1] = yy
+
+        err = torch.norm(y_PINN-y_NUM, dim=0)
+        err = err.detach().numpy()
         y_PINN = y_PINN.detach().numpy()
         u_PINN = u_PINN.detach().numpy()
+        y_NUM = y_NUM.detach().numpy()
 
-        plt.figure(figsize=(15,5))
+        plt.figure(figsize=(15,15))
 
-        plt.subplot(1, 3, 1)
-        plt.plot(y_PINN[0, :], y_PINN[1, :], color="black", label=r"$y_{\theta}$")
-        plt.scatter([self.y0()[0, 0], 1.001*self.y0()[0, 0]], [self.y0()[0, 1], 1.001*self.y0()[0, 1]], color="red", label="$y_0$")
-        plt.scatter([self.y1()[0, 0], 1.001*self.y1()[0, 0]], [self.y1()[0, 1], 1.001*self.y1()[0, 1]], color="green", label="$y_1$")
+        plt.subplot(2, 2, 1)
+        plt.plot(y_PINN[0, :], y_PINN[1, :], color="green", label=r"$y_{\theta}$ (PINN)")
+        plt.plot(y_NUM[0, :], y_NUM[1, :], color="red", label=r"$y_{\theta}$ (Midpoint)")
+        plt.scatter([self.y0()[0, 0], 1.001*self.y0()[0, 0]], [self.y0()[0, 1], 1.001*self.y0()[0, 1]], color="blue", label="$y_0$")
+        plt.scatter([self.y1()[0, 0], 1.001*self.y1()[0, 0]], [self.y1()[0, 1], 1.001*self.y1()[0, 1]], color="magenta", label="$y_1$")
         ax = plt.gca()
         plt.axis("equal")
         plt.grid()
@@ -208,15 +265,33 @@ class ML(NN):
         ax.set_ylabel("$y_2$")
         plt.title(r"$y_{\theta}(t)$ (PINN)")
 
-        plt.subplot(1, 3, 2)
-        plt.plot(t.squeeze(), u_PINN.squeeze(), color="black", label=r"$u_{\theta}$")
+        plt.subplot(2, 2, 2)
+        plt.plot(t.squeeze(), err, color="orange", label=r"$e_{\theta}$")
+        ax = plt.gca()
+        # plt.axis("equal")
+        plt.grid()
+        plt.legend()
+        plt.yscale("log")
+        ax.set_xlabel("$t$")
+        ax.set_ylabel(r"$e_{\theta}(t)$")
+        plt.title("Error")
+
+        plt.subplot(2, 2, 3)
+        if params['dim_control'] == 1:
+            plt.plot(t.squeeze(), u_PINN.squeeze(), color="black", label=r"$u_{\theta}$")
+        if params['dim_control'] == 2:
+            plt.plot(u_PINN[0, :], u_PINN[1, :], color="black", label=r"$u_{\theta}$")
         ax = plt.gca()
         plt.grid()
         plt.legend()
-        ax.set_xlabel("t")
+        if params['dim_control'] == 1:
+            ax.set_xlabel("$t$")
+        if params['dim_control'] == 2:
+            ax.set_xlabel("$y_1$")
+            ax.set_ylabel("$y_2$")
         plt.title(r"$u_{\theta}(t)$ (PINN)")
 
-        plt.subplot(1, 3, 3)
+        plt.subplot(2, 2, 4)
         plt.plot(list(range(len(Loss_train))), Loss_train, label="$Loss_{train}$", color="green")
         plt.plot(list(range(len(Loss_test))), Loss_test, label="$Loss_{test}$", color="red")
         plt.yscale("log")
