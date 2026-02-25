@@ -1,0 +1,15 @@
+Schrödinger equation with mixed first and proper function as initial condition
+
+- Data: 5000
+- Batch size: 64
+- N_epochs: 1000
+- Time for training: 22 min 08 s
+- Learning rate: 1e-3
+
+- NN structure: MLP with 2 hidden layers, 128 neurons per hidden layer
+
+- Convergence:
+   > Error [L2]:  1.2951E-04
+   > Error [H1]:  1.0731E-03
+
+NB: Convergence is made on a grid (r_i cos(theta_j), r_i sin(theta_j)) with i and j in [[0, 50]], 0 <= r_i <= 1 and 0 <= theta_j <= 2*pi
