@@ -7,3 +7,7 @@ PDE's:
 - Poisson equation 2D
 - Schrödinger equation 1D
 - Schrödinger equation 2D
+
+Additional codes for control theory
+
+- 2D Controlled ODE
