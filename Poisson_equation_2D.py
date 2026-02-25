@@ -75,8 +75,8 @@ class ML(NN):
         u_hat = torch.zeros_like(x)
         u_hat.requires_grad = True
 
-        delta_x = 1e-3 # Small parameter for finite differences in space, first dimension
-        delta_y = 1e-3 # Small parameter for finite differences in space, second dimension
+        delta_x = 1e-2 # Small parameter for finite differences in space, first dimension
+        delta_y = 1e-2 # Small parameter for finite differences in space, second dimension
 
         u_hat_xx = (model(x + delta_x*ones, y) - 2*model(x, y) + model(x - delta_x*ones, y))/(delta_y**2)
         u_hat_yy = (model(x, y + delta_y*ones) - 2*model(x, y) + model(x,y - delta_y*ones))/(delta_y**2)
@@ -125,7 +125,7 @@ class ML(NN):
         loss_BC = (((u_hat_B)).abs() ** 2).mean() # Loss associated to boundary conditions (Dirichlet on the unit disk)
 
         return loss_PDE + loss_BC
-    
+
     def Train(self, model , K = 1000 , BS = 64 ,  N_epochs = 100 , N_epochs_print = 10):
         """Makes the training of the model to learn solution of PDE
         Inputs:
@@ -258,7 +258,7 @@ class ML(NN):
         torch.save((Loss_train, Loss_test, best_model) , "model_Poisson_Equation_2D_autograd")
 
         pass
-    
+
     def Integrate(self, name_model="model_Poisson_Equation_2D",  hx = 0.02 ,  hy = 0.02, save_fig=False):
         """Integrates the PDE with trained model.
         Inputs:
@@ -273,10 +273,12 @@ class ML(NN):
         grid_x, grid_y = torch.meshgrid(x_grid, y_grid)
         theta = torch.arange(0,2*np.pi,0.01)
 
+        print("   > Computation of exact solution")
         # Computation of the exact solution
         z_Exact = torch.ones_like(grid_x) - grid_x**2 - grid_y**2
         z_Exact = z_Exact.detach().numpy()
 
+        print("   > Computation of approximated solution by PINN's")
         # Resolution with the PINN
         z_PINN = torch.zeros_like(grid_x)
         for ix in range(grid_x.shape[0]):
@@ -285,8 +287,29 @@ class ML(NN):
 
         z_PINN = z_PINN.detach().numpy()
 
+        print("   > Distance between solutions comutation")
         # Distance between both solutions
         z_DIFF = np.abs(z_Exact-z_PINN)
+
+        print("   > L2/H1 Error computation")
+        ERR_L2, ERR_H1 = [], []
+        for rr in torch.linspace(0, 1, 50):
+            for tt in torch.linspace(0, 2*torch.pi, 50):
+                xx, yy = rr * torch.cos(tt), rr * torch.sin(tt)
+                ERR_L2 += rr * (model(torch.tensor([[xx]]), torch.tensor([[yy]])) - (torch.tensor([[1 - xx ** 2 - yy ** 2]]))).abs() ** 2
+
+                x = torch.tensor([[xx]], requires_grad=True)
+                y = torch.tensor([[yy]], requires_grad=True)
+                u = model(x, y)
+                u_x = torch.autograd.grad(u, x, torch.ones_like(u), create_graph=True)[0]
+                u_y = torch.autograd.grad(u, y, torch.ones_like(u), create_graph=True)[0]
+                ERR_H1 += rr * (u_x - (torch.tensor([[- 2 * xx]]))).abs() ** 2 + rr * (u_y - (torch.tensor([[- 2 * yy]]))).abs() ** 2
+
+        ERR_L2 = sum(ERR_L2) / len(ERR_L2)
+        ERR_H1 = sum(ERR_H1) / len(ERR_H1)
+
+        print("      - Error [L2]: ", format(ERR_L2[0] ** 0.5, '.4E'))
+        print("      - Error [H1]: ", format((ERR_L2[0] + ERR_H1[0]) ** 0.5, '.4E'))
 
         plt.figure(figsize=(12,10))
 
