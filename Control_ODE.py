@@ -25,11 +25,15 @@ import datetime
 from datetime import datetime as dtime
 
 # Python code to solve ODE controlability problem with PINN's
+print(150 * "_")
+print(" ")
+print("   CODE FOR ODE CONTROLABILITY")
+print(150 * "_")
 
-params_linear_pendulum = {'name': 'linear_pendulum', 'dim_control': 1}
-params_pendulum = {'name': 'pendulum', 'dim_control': 2}
+params_linear_pendulum = {'name': 'linear_pendulum', 'dim_state': 2, 'dim_control': 1, 'initial_condition': torch.tensor([[1, 0]]), 'final_condition': torch.tensor([[0, 5]])}
+params_pendulum = {'name': 'pendulum', 'dim_state':2, 'dim_control': 2, 'initial_condition': torch.tensor([[1, 0]]), 'final_condition': torch.tensor([[0, 2]])}
 
-params = params_pendulum
+params = params_linear_pendulum
 
 class NN(nn.Module):
     """Class of Neural Networks used in this scipt"""
@@ -37,16 +41,16 @@ class NN(nn.Module):
     def __init__(self):
         zeta , HL = 256 , 4
         super().__init__()
-        self.Y = nn.ModuleList([nn.Linear(1, zeta), nn.Tanh()] + (HL - 1) * [nn.Linear(zeta, zeta), nn.Tanh()] + [nn.Linear(zeta, 2, bias=True)])
+        self.Y = nn.ModuleList([nn.Linear(1, zeta), nn.Tanh()] + (HL - 1) * [nn.Linear(zeta, zeta), nn.Tanh()] + [nn.Linear(zeta, params['dim_state'], bias=True)])
         self.U = nn.ModuleList([nn.Linear(1, zeta), nn.Tanh()] + (HL - 1) * [nn.Linear(zeta, zeta), nn.Tanh()] + [nn.Linear(zeta, params['dim_control'], bias=True)])
 
     def y0(self):
         """Initial condition."""
-        return torch.tensor([[1, 0]])
+        return params['initial_condition']
 
     def y1(self):
         """Final condition."""
-        return torch.tensor([[0, 20]])
+        return params['final_condition']
 
     def f(self, X, U):
         """Vector field associated to the ODE.
@@ -157,10 +161,10 @@ class ML(NN):
 
         t_train, t_test = T * torch.rand([1, K]), T * torch.rand([1, K])
 
-        optimizer = optim.AdamW(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-9, amsgrad=True)  # Algorithm AdamW
+        optimizer = optim.AdamW(model.parameters(), lr=5e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-9, amsgrad=True)  # Algorithm AdamW
         best_model, best_loss_train, best_loss_test = model, np.infty, np.infty  # Selects the best minimizer of the Loss function
-        Loss_train = [] # list for loss_train values
-        Loss_test = []  # List for loss_test values
+        Loss_train, Loss_train_ODE, Loss_train_FC = [], [], [] # list for loss_train values
+        Loss_test, Loss_test_ODE, Loss_test_FC = [], [], []  # List for loss_test values
 
         for epoch in range(N_epochs + 1):
             for ixs in torch.split(torch.arange(t_train.shape[1]), BS):
@@ -181,7 +185,11 @@ class ML(NN):
                 # best_model = model
 
             Loss_train.append(loss_train.item())
+            Loss_train_ODE.append(loss_train_ODE.item())
+            Loss_train_FC.append(loss_train_FC.item())
             Loss_test.append(loss_test.item())
+            Loss_test_ODE.append(loss_test_ODE.item())
+            Loss_test_FC.append(loss_test_FC.item())
 
             if epoch % N_epochs_print == 0:  # Print of Loss values (one print each N_epochs_print epochs)
                 end_time_train = start_time_train + ((N_epochs + 1) / (epoch + 1)) * (time.time() - start_time_train)
@@ -193,9 +201,11 @@ class ML(NN):
         print("Loss_train (final)=", format(best_loss_train, '.4E'))
         print("Loss_test (final)=", format(best_loss_test, '.4E'))
 
-        print("Computation time for training (h:min:s):", str(datetime.timedelta(seconds=int(time.time() - start_time_train))))
+        training_time = str(datetime.timedelta(seconds=int(time.time() - start_time_train)))
+        params['training_time'] = training_time
+        print("Computation time for training (h:min:s):", training_time)
 
-        torch.save((Loss_train, Loss_test, best_model , T) , "model_Control_ODE")
+        torch.save((Loss_train, Loss_train_ODE, Loss_train_FC, Loss_test, Loss_test_ODE, Loss_test_FC, best_model , T, params) , "model_Control_ODE")
 
         pass
 
@@ -206,21 +216,21 @@ class ML(NN):
         - ht: Float - Step size for time. Default: 0.02
         - save_fig: Boolean - Saves the figure or not. Default: False"""
 
-        Loss_train, Loss_test, model, T = torch.load(name_model)
+        Loss_train, Loss_train_ODE, Loss_train_FC, Loss_test, Loss_test_ODE, Loss_test_FC, model, T, load_params = torch.load(name_model)
 
         t = torch.arange(0, T + ht, ht).unsqueeze(0)
 
         # Resolution with the PINN
-        print(" ")
-        print("Resolution with PINN...")
+        print("Test of ODE controlability")
+        print("   > Resolution with PINN...")
         y_PINN, u_PINN = model(t)
 
 
         # Resolution with Midpoint method
-        print(" ")
-        print("Resolution with Midpoint method...")
+        print("   > Resolution with Midpoint method...")
         y_NUM = torch.zeros_like(y_PINN)
-        y_NUM[:, 0] = self.y0()
+        # y_NUM[:, 0] = self.y0()
+        y_NUM[:, 0] = load_params['initial_condition']
         for n in range(torch.numel(t) - 1):
             print("   > Loading: " + str(format(100 * (n+1) / (torch.numel(t)-1), '.1f') ) + " % ", end="\r")
             ### Forward Euler [old version]
@@ -245,6 +255,10 @@ class ML(NN):
             y_NUM[:, n+1] = yy
 
         err = torch.norm(y_PINN-y_NUM, dim=0)
+
+        print("   > Error [Midploint + Control (PINN) - Solution (PINN)]:", format(torch.norm(err, p=float('inf')), '.4E'))
+        print("   > Error [Final condition]:", format(torch.norm(load_params['final_condition'] - y_PINN[:, -1], p=float('inf')), '.4E'))
+
         err = err.detach().numpy()
         y_PINN = y_PINN.detach().numpy()
         u_PINN = u_PINN.detach().numpy()
@@ -255,8 +269,10 @@ class ML(NN):
         plt.subplot(2, 2, 1)
         plt.plot(y_PINN[0, :], y_PINN[1, :], color="green", label=r"$y_{\theta}$ (PINN)")
         plt.plot(y_NUM[0, :], y_NUM[1, :], color="red", label=r"$y_{\theta}$ (Midpoint)")
-        plt.scatter([self.y0()[0, 0], 1.001*self.y0()[0, 0]], [self.y0()[0, 1], 1.001*self.y0()[0, 1]], color="blue", label="$y_0$")
-        plt.scatter([self.y1()[0, 0], 1.001*self.y1()[0, 0]], [self.y1()[0, 1], 1.001*self.y1()[0, 1]], color="magenta", label="$y_1$")
+        # plt.scatter([self.y0()[0, 0], 1.001*self.y0()[0, 0]], [self.y0()[0, 1], 1.001*self.y0()[0, 1]], color="blue", label="$y_0$")
+        # plt.scatter([self.y1()[0, 0], 1.001*self.y1()[0, 0]], [self.y1()[0, 1], 1.001*self.y1()[0, 1]], color="magenta", label="$y_1$")
+        plt.scatter([load_params['initial_condition'][0, 0], 1.001 * load_params['initial_condition'][0, 0]], [load_params['initial_condition'][0, 1], 1.001 * load_params['initial_condition'][0, 1]], color="blue", label="$y_0$")
+        plt.scatter([load_params['final_condition'][0, 0], 1.001 * load_params['final_condition'][0, 0]], [load_params['final_condition'][0, 1], 1.001 * load_params['final_condition'][0, 1]], color="magenta", label="$y_1$")
         ax = plt.gca()
         plt.axis("equal")
         plt.grid()
@@ -293,11 +309,15 @@ class ML(NN):
 
         plt.subplot(2, 2, 4)
         plt.plot(list(range(len(Loss_train))), Loss_train, label="$Loss_{train}$", color="green")
+        plt.plot(list(range(len(Loss_train_ODE))), Loss_train_ODE, label="$Loss_{train, ODE}$", color="lime")
+        plt.plot(list(range(len(Loss_train_FC))), Loss_train_FC, label="$Loss_{train, FC}$", color="yellow")
         plt.plot(list(range(len(Loss_test))), Loss_test, label="$Loss_{test}$", color="red")
+        plt.plot(list(range(len(Loss_test_ODE))), Loss_test_ODE, label="$Loss_{test, ODE}$", color="orange")
+        plt.plot(list(range(len(Loss_test_FC))), Loss_test_FC, label="$Loss_{test, FC}$", color="pink")
         plt.yscale("log")
         plt.xlabel("epochs")
         plt.legend()
-        plt.title("Loss evolution")
+        plt.title("Loss evolution - Training time:" + load_params['training_time'])
         plt.grid()
 
 
@@ -305,4 +325,5 @@ class ML(NN):
             plt.show()
         else:
             plt.savefig("PINN_ODE_Control.pdf" , dpi = (500))
-        pass
+        plt.close()
+        return None
