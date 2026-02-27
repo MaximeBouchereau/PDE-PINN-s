@@ -1,4 +1,4 @@
-Python codes to approimate solutions of Partial Differential Equations with PINN's (Physics Informed Neural Networks).
+Python codes to approximate solutions of Partial Differential Equations with PINN's (Physics Informed Neural Networks).
 
 PDE's:
 
