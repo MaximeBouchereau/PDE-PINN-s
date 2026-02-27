@@ -11,3 +11,4 @@ PDE's:
 Additional codes for control theory
 
 - 2D Controlled ODE
+- 1D Controlled Schrödinger's equation
