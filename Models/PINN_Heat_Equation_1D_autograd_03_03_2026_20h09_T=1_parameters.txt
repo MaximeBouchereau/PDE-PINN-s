@@ -1,0 +1,10 @@
+Heat equation with mixed Gaussian function as initial condition and Dirichlet boundary conditions - Date 03-03-2026 - 20:09
+
+- Data: 5.000
+- Batch size: 64
+- N_epochs: 100
+- Time for training [h:mi:s]: 0:01:52
+- Learning rate: 1e-3
+
+- Loss_train [final]: 1.7877E-05
+- Loss_test [final]: 3.0827E-05
