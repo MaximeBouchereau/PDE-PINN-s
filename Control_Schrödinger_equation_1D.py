@@ -254,7 +254,11 @@ class ML(NN):
         - save_fig: Boolean - Saves the figure or not. Default: False.
         """
 
-        Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T, train_time = torch.load(name_model)
+        MM = torch.load(name_model)
+        if len(MM) == 13:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T, train_time = torch.load(name_model)
+        if len(MM) == 12:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T = torch.load(name_model)
 
         plt.figure()
         plt.plot(list(range(len(Loss_train))), Loss_train, label="$Loss_{train}$", color="green", linewidth=2)
@@ -271,7 +275,10 @@ class ML(NN):
         plt.xlabel("epochs")
         # plt.ylabel("Loss")
         plt.legend()
-        plt.title("Loss evolution - Training time [h:min:s]: " + train_time)
+        if len(MM) == 12:
+            plt.title("Loss evolution")
+        if len(MM) == 13:
+            plt.title("Loss evolution - Training time [h:min:s]: " + train_time)
         plt.grid()
 
         if save_fig == False:
@@ -288,7 +295,11 @@ class ML(NN):
         - hx: Float - Step size for space. Default: 0.02
         - save_fig: Boolean - Saves the figure or not. Default: False"""
 
-        Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T, train_time = torch.load(name_model)
+        MM = torch.load(name_model)
+        if len(MM) == 13:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T, train_time = torch.load(name_model)
+        if len(MM) == 12:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T = torch.load(name_model)
 
         t_grid, x_grid = torch.arange(0, T+ht, ht), torch.arange(-L, L+hx, hx)
         grid_t, grid_x = torch.meshgrid(t_grid, x_grid)
@@ -429,7 +440,11 @@ class ML(NN):
         - save_fig: Boolean - Saves the figure or not. Default: False
         """
 
-        Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T, train_time = torch.load(name_model)
+        MM = torch.load(name_model)
+        if len(MM) == 13:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T, train_time = torch.load(name_model)
+        if len(MM) == 12:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T = torch.load(name_model)
 
         t_grid, x_grid = torch.arange(0, T + ht, ht), torch.arange(-L, L + hx, hx)
         grid_t, grid_x = torch.meshgrid(t_grid, x_grid)
@@ -457,7 +472,8 @@ class ML(NN):
         z_CN_Im = z_CN.imag
 
         L2_CN_0 = torch.mean(z_CN_[0, :])
-        L2_CN = torch.mean(z_CN_, dim=1) / L2_CN_0
+        # L2_CN = torch.mean(z_CN_, dim=1) / L2_CN_0
+        L2_CN = 2 * L * torch.mean(z_CN_, dim=1)
 
         # z_CN_ = z_CN_.detach().numpy()
         L2_CN = L2_CN.detach().numpy()
@@ -481,7 +497,8 @@ class ML(NN):
             z_PINN_Im[it, :] = psi[1, :]
 
         L2_PINN_0 = torch.mean(z_PINN[0, :])
-        L2_PINN = torch.mean(z_PINN, dim=1) / L2_PINN_0
+        # L2_PINN = torch.mean(z_PINN, dim=1) / L2_PINN_0
+        L2_PINN = 2 * L * torch.mean(z_PINN, dim=1)
         # z_PINN = z_PINN.detach().numpy()
         L2_PINN = L2_PINN.detach().numpy()
 
@@ -499,3 +516,94 @@ class ML(NN):
         else:
             plt.savefig(name_model[6:] + "_L2_Evolution.pdf" , dpi = (500))
         pass
+
+    def Conditions(self, name_model="model_Control_Schrödinger_Equation_1D", ht = 0.02, hx = L/50, save_fig = False):
+        """Prints the comparison between initial and final conditions.
+        Inputs:
+        - name_model: Str - Name of the trained model. Default: model_Heat_Equation_1D
+        - ht: Float - Step size for time. Default: 0.02.
+        - hx: Float - Step size for space. Default: 0.02
+        - save_fig: Boolean - Saves the figure or not. Default: False
+        """
+        MM = torch.load(name_model)
+        if len(MM) == 13:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T, train_time = torch.load(name_model)
+        if len(MM) == 12:
+            Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC, Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC, model, T = torch.load(name_model)
+
+        t_grid, x_grid = torch.arange(0, T + ht, ht), torch.arange(-L, L + hx, hx)
+        grid_t, grid_x = torch.meshgrid(t_grid, x_grid)
+        u_theta = model(t_grid.unsqueeze(0), 0 * t_grid.unsqueeze(0))[1]
+
+        # Resolution with Crank-Nicolson scheme
+        print("   > Resolution with Crank-Nicolson scheme...")
+        N, J = t_grid.shape[0], x_grid.shape[0]
+        A0 = (1j) * (0.5 * ht / hx ** 2) * (2 * torch.diag(torch.ones(J - 2), 0) - torch.diag(torch.ones(J - 3), -1) - torch.diag(torch.ones(J - 3), 1)) + 0.5 * (1j) * ht * torch.diag(x_grid[1:-1] ** 2)
+        z_CN = torch.zeros_like(grid_t, dtype=torch.cfloat)
+        ones = torch.ones_like(x_grid)
+
+        z_CN[0, :] = self.psi_0(x_grid)
+        for n in range(N - 1):
+            count = int(100 * ((n + 2) / N))
+            sys.stdout.write("\r%d " % count + "%")
+            sys.stdout.flush()
+            u_hat = model(t_grid[n] * ones[1:-1].unsqueeze(0), x_grid[1:-1].unsqueeze(0))[1]
+            A = A0 + (1j) * ht * torch.diag((u_hat * x_grid[1:-1]).squeeze())
+            z_CN[n + 1, 1:J - 1] = torch.inverse(torch.eye(J - 2) + 0.5 * A) @ (torch.eye(J - 2) - 0.5 * A) @ z_CN[n, 1:J - 1]
+
+        # Transform tensors to arrays
+        z_CN_ = (z_CN.real) ** 2 + (z_CN.imag) ** 2
+        z_CN_Re = z_CN.real
+        z_CN_Im = z_CN.imag
+
+        z_CN_ = z_CN_.detach().numpy()
+
+        # Resolution with the PINN
+        print(" ")
+        print("Resolution with PINN...")
+        z_PINN = torch.zeros_like(grid_t)
+        z_PINN_Re = torch.zeros_like(grid_t)
+        z_PINN_Im = torch.zeros_like(grid_t)
+        ones = torch.ones_like(x_grid).unsqueeze(0)
+        for it in range(grid_t.shape[0]):
+            count = int(100 * ((it + 1) / torch.numel(t_grid)))
+            sys.stdout.write("\r%d " % count + "%")
+            sys.stdout.flush()
+            psi = model(t_grid[it] * ones, x_grid.unsqueeze(0))[0]
+            z_PINN[it, :] = psi[0, :] ** 2 + psi[1, :] ** 2
+            z_PINN_Re[it, :] = psi[0, :]
+            z_PINN_Im[it, :] = psi[1, :]
+
+        # L2_PINN_0 = torch.mean(z_PINN[0, :])
+        # L2_PINN = torch.mean(z_PINN, dim=1) / L2_PINN_0
+        z_PINN = z_PINN.detach().numpy()
+        # L2_PINN = L2_PINN.detach().numpy()
+
+        plt.figure(figsize=(12,6))
+        plt.subplot(1, 2, 1)
+        plt.plot(x_grid.unsqueeze(0).detach().numpy().T, z_PINN[0, :].T, label="PINN", color="green")
+        plt.plot(x_grid.unsqueeze(0).detach().numpy().T, z_CN_[0, :].T, label="Crank-Nicolson", color="blue")
+        plt.plot(x_grid.unsqueeze(0).detach().numpy().T, (self.psi_0(x_grid) ** 2).detach().numpy().T, label="Exact", color="red")
+        plt.xlabel("$t$")
+        # plt.ylabel("Loss")
+        plt.legend(loc="upper right")
+        plt.title(r"Initial condition $|\psi(0, \cdot)|^2$")
+        plt.grid()
+
+        plt.subplot(1, 2, 2)
+        plt.plot(x_grid.unsqueeze(0).detach().numpy().T, z_PINN[-1, :].T, label="PINN", color="green")
+        plt.plot(x_grid.unsqueeze(0).detach().numpy().T, z_CN_[-1, :].T, label="Crank-Nicolson", color="blue")
+        plt.plot(x_grid.unsqueeze(0).detach().numpy().T, (self.psi_1(x_grid) ** 2).detach().numpy().T, label="Exact", color="red")
+        plt.xlabel("$t$")
+        # plt.ylabel("Loss")
+        plt.legend(loc="upper right")
+        plt.title(r"Final condition $|\psi(T, \cdot)|^2$")
+        plt.grid()
+
+        if save_fig == False:
+            plt.show()
+        else:
+            plt.savefig(name_model[6:] + "_Initial_Final_Condition.pdf", dpi=(500))
+        pass
+
+
