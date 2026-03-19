@@ -26,7 +26,7 @@ from datetime import datetime as dtime
 
 # Python code to solve controlled 1D heat equation with PINN's for Dirichlet boundary conditions and boundary control
 
-a = 0.3
+a = 0.5
 
 class NN(nn.Module):
     """Class of Neural Networks used in this scipt"""
@@ -68,9 +68,10 @@ class NN(nn.Module):
         """Final condition function.
         Inputs:
         - x: Tensor of shape (1,n): Space variable"""
-        return torch.exp(- 5 * x ** 2) * (1 - x ** 2)
-        # return 0.7 * torch.sin(np.pi * (x + 1) / 2) + 0.3 * torch.sin(2 * np.pi * (x + 1) / 2)
-
+        # return torch.exp(- 5 * x ** 2) * (1 - x ** 2)
+        # return 0.5 * torch.sin(np.pi * x)
+        # return 0.7 * torch.sin(np.pi * (x + 1) / 2) + 0.4 * torch.exp(-4 * x ** 2) * (1 - x ** 2)
+        return torch.sin(np.pi * (x + 1) / 2) + 0.2 * torch.sin(2 * np.pi * (x + 1) / 2) + 0.1 * torch.sin(3 * np.pi * (x + 1) / 2)
 
 class ML(NN):
     """Training of the neural network for solving 1D heat equation"""
@@ -147,7 +148,7 @@ class ML(NN):
         t_train, t_test = T * torch.rand([1, K]), T * torch.rand([1, K])
         x_train, x_test = 2 * torch.rand([1, K]) - 1, 2 * torch.rand([1, K]) - 1
 
-        optimizer = optim.AdamW(model.parameters(), lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-9, amsgrad=True)  # Algorithm AdamW
+        optimizer = optim.AdamW(model.parameters(), lr=2e-4, betas=(0.9, 0.999), eps=1e-8, weight_decay=1e-9, amsgrad=True)  # Algorithm AdamW
         best_model, best_loss_train, best_loss_test = model, np.infty, np.infty  # Selects the best minimizer of the Loss function
         Loss_train, Loss_train_PDE, Loss_train_BC, Loss_train_IC, Loss_train_FC = [], [], [], [], [] # list for loss_train values
         Loss_test, Loss_test_PDE, Loss_test_BC, Loss_test_IC, Loss_test_FC = [], [], [], [], []  # List for loss_test values
@@ -330,8 +331,8 @@ class ML(NN):
         plt.title(r"$u_{\theta}$")
 
         plt.subplot(2, 3, 5)
-        plt.plot(x_grid.detach().numpy().T, z_PINN[0, :], label=r"$v_{\theta}(0, \cdot)$", color="green")
-        plt.plot(x_grid.detach().numpy().T, z_CN[0, :], label=r"$v_{CN}(0, \cdot)$", color="blue")
+        plt.plot(x_grid.detach().numpy().T, z_PINN[0, ::-1], label=r"$v_{\theta}(0, \cdot)$", color="green")
+        plt.plot(x_grid.detach().numpy().T, z_CN[0, ::-1], label=r"$v_{CN}(0, \cdot)$", color="blue")
         plt.plot(x_grid.detach().numpy().T, self.v_0(x_grid), label=r"$v(0, \cdot)$", color="red")
         plt.xlabel("$t$")
         # plt.ylabel("Loss")
@@ -340,8 +341,8 @@ class ML(NN):
         plt.grid()
 
         plt.subplot(2, 3, 6)
-        plt.plot(x_grid.detach().numpy().T, z_PINN[-1, :], label=r"$v_{\theta}(T, \cdot)$", color="green")
-        plt.plot(x_grid.detach().numpy().T, z_CN[-1, :], label=r"$v_{CN}(T, \cdot)$", color="blue")
+        plt.plot(x_grid.detach().numpy().T, z_PINN[-1, ::-1], label=r"$v_{\theta}(T, \cdot)$", color="green")
+        plt.plot(x_grid.detach().numpy().T, z_CN[-1, ::-1], label=r"$v_{CN}(T, \cdot)$", color="blue")
         plt.plot(x_grid.detach().numpy().T, self.v_1(x_grid), label=r"$v(T, \cdot)$", color="red")
         plt.xlabel("$t$")
         # plt.ylabel("Loss")
