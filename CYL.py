@@ -10,6 +10,7 @@ params_exp = {'name':'exponential', 'T':1, 'd':1, 'N':50, 'J':100, 'J_ref':100, 
 params_lgt = {'name':'logistic', 'T':10, 'd':1, 'N':50, 'J':5000, 'J_ref':100, 'y_0':np.array([[0.01]]), 'alpha':0.5}
 params_hos = {'name':'harmonic_oscillator', 'T':20, 'd':2, 'N':250, 'J':10000, 'J_ref':100, 'y_0':np.array([[1.0, 0.0]]), 'alpha':0.2}
 params_pdl = {'name':'pendulum', 'T':20, 'd':2, 'N':250, 'J':100, 'J_ref':100, 'y_0':np.array([[2.0, 0.0]]), 'alpha':0.2}
+params_lrz = {'name':'Lorenz', 'T':1.01, 'd':3, 'N':5000, 'J':100, 'J_ref':100, 'y_0':np.array([[10.0, 10.0, 20.0]]), 'alpha':1e-2}
 
 class ODE:
     """Class for ODE tools"""
@@ -32,6 +33,11 @@ class ODE:
         if params['name'] == "pendulum":
             z[0, :] = -y[1, :]
             z[1, :] = np.sin(y[0, :])
+        if params['name'] == "Lorenz":
+            sigma, rho, beta = 10, 28, 8/3
+            z[0, :] = sigma * (y[1, :] - y[0, :])
+            z[1, :] = rho * y[0, :] - y[1, :] - y[0, :] * y[2, :]
+            z[2, :] = y[0, :] * y[1, :] - beta * y[2, :]
         return z
 
     @staticmethod
@@ -299,7 +305,7 @@ class Thm:
             Y[n + 1, :, 1:] = params['alpha'] * Y_new + (1 - params['alpha']) * Y[n, :, 1:]
             rel_err = ODE.Rel_err(Y[n+1, :, :], Y_ref)
             L_err.append(rel_err)
-            print("    - Error:", format(rel_err, '.4E'), end="\r")
+            print("    - n = " + str(n + 1) + " / " + str(params['N']) + " - Error:", format(rel_err, '.4E'), end="\r")
 
         # Error evolution
         plt.figure()
@@ -327,6 +333,11 @@ class Thm:
                 plt.plot(Y[n, 0, :], Y[n, 1, :], label="$y^{[n]}$", color="green")
                 plt.plot(Y_ref[0, :], Y_ref[1, :], label="$y$", color="black", linestyle="dashed")
                 plt.axis('equal')
+            if params['d'] == 3:
+                axes = plt.axes(projection="3d")
+                axes.plot(Y[n, 0, :], Y[n, 1, :], Y[n, 2, :], label="$y^{[n]}$", color="green")
+                axes.plot(Y_ref[0, ], Y_ref[1, :], Y_ref[2, :], label="$y$", color="black", linestyle="dashed")
+                axes.axis('equal')
             plt.legend(loc="upper right")
             plt.grid()
             plt.title("n=" + str(n) + " - Rel. error = " + str(format(L_err[n], '.4E')))
