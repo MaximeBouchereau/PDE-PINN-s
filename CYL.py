@@ -11,6 +11,7 @@ params_lgt = {'name':'logistic', 'T':10, 'd':1, 'N':50, 'J':5000, 'J_ref':100, '
 params_hos = {'name':'harmonic_oscillator', 'T':20, 'd':2, 'N':250, 'J':10000, 'J_ref':100, 'y_0':np.array([[1.0, 0.0]]), 'alpha':0.2}
 params_pdl = {'name':'pendulum', 'T':20, 'd':2, 'N':250, 'J':100, 'J_ref':100, 'y_0':np.array([[2.0, 0.0]]), 'alpha':0.2}
 params_lrz = {'name':'Lorenz', 'T':1.01, 'd':3, 'N':5000, 'J':100, 'J_ref':100, 'y_0':np.array([[10.0, 10.0, 20.0]]), 'alpha':1e-2}
+params_rgb = {'name':'rigid_body', 'T':25, 'd':3, 'N':300, 'J':1000, 'J_ref':100, 'y_0':np.array([[0.3, 0.3, 0.9]]), 'alpha':1e-1}
 
 class ODE:
     """Class for ODE tools"""
@@ -38,6 +39,11 @@ class ODE:
             z[0, :] = sigma * (y[1, :] - y[0, :])
             z[1, :] = rho * y[0, :] - y[1, :] - y[0, :] * y[2, :]
             z[2, :] = y[0, :] * y[1, :] - beta * y[2, :]
+        if params['name'] == "rigid_body":
+            I_1, I_2, I_3 = 1, 2, 3
+            z[0, :] = (1 / I_3 - 1 / I_2) * y[1, :] * y[2, :]
+            z[1, :] = (1 / I_1 - 1 / I_3) * y[2, :] * y[0, :]
+            z[2, :] = (1 / I_2 - 1 / I_1) * y[0, :] * y[1, :]
         return z
 
     @staticmethod
